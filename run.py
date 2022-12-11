@@ -3,10 +3,13 @@ import networkx as nx
 from collections import defaultdict
 import string
 import random
-import enum
+from enum import Enum
 import numpy as np
 
-class State:
+# parameters
+alpha = 3
+
+class State(Enum):
     INACTIVE = 0
     ACTIVE = 1
 # tree = MerkleTree()
@@ -78,7 +81,7 @@ content_lst = [f'{random.getrandbits(256):=0256b}' for c in range(10)]
 for node in G.nodes():
     # create nodeId 256 bit string (will be used as PeerId)
     G.nodes()[node]["nodeId"] = f'{random.getrandbits(256):=0256b}'
-    G.nodes()[node]["active"] = State.ACTIVE # nodes can randomly become inactive (go offline), in which case this becomes False
+    G.nodes()[node]["state"] = State.ACTIVE # nodes can randomly become inactive (go offline), in which case this becomes False
     G.nodes()[node]["activeSteps"] = 0 # iterate this each simulation step
     G.nodes()[node]["pinned"] = random.sample(content_lst, random.randint(0, 10))
     G.nodes()[node]["cached"] = []
@@ -188,9 +191,68 @@ def store():
 def find_node():
     pass
 
-def find_value():
-    pass
+def find_value(G, node, value, _k=20, _alpha=3):
+    """
+    Traverses the network according to the Kademlia algorithm.
 
+    G: the NetworkX graph to traverse
+    node: node seeking the value
+    value: bitstring entry being searched for
+    _k: number of peers to seek (default=20)
+    _alpha: number of requests sent to peers at once (default=3)
+    """
+    kbucket_peers = [bucket for bucket in G.nodes[node._data]["dht"].values() if len(bucket) > 0]
+    for kbucket in kbucket_peers:
+        for peer in kbucket:
+            if ping(G.nodes[peer]) == State.ACTIVE:
+                # peer updates its own DHT with node details
+                dist = hamming2(G.nodes[node._data]["nodeId"], G.nodes[peer]["nodeId"])
+                for i in range(256):
+                    if pow(2,i) <= dist < pow(2,i+1):
+                        # if the node is already in the peer's k-bucket the node is moved to the first index
+                        try:
+                            # node is currently in the peer's k-bucket
+                            nIdx = G.nodes[peer]["dht"][i].index(node._data)
+                            # remove this node, the requestor, to the front of it's k-bucket list
+                            G.nodes[peer]["dht"][i].insert(0, G.nodes[peer]["dht"][i].pop(nIdx))
+                        except ValueError:
+                            # # node is not currently in the peer's' k-bucket
+                            # # if there are fewer than k entries, insert into the beginning
+                            if len(G.nodes[peer]["dht"][i]) < _k:
+                                G.nodes[peer]["dht"][i].insert(0, node._data)
+                            else: # full k-bucket
+                                # ping the least recently seen node, if active, move that node to the front
+                                if ping(G.nodes[G.nodes[peer]["dht"][i][-1]]) == State.ACTIVE:
+                                    # if least recently seen is active it's moved to most recently seen (index 0) and the requestor node info is dropped
+                                    G.nodes[peer]["dht"][i].insert(0, G.nodes[peer]["dht"][i].pop(len(G.nodes[peer]["dht"][i])-1))
+                                else:
+                                    # remove that node
+                                    del G.nodes[peer]["dht"][i][-1]
+                                    # insert the requestor node
+                                    G.nodes[peer]["dht"][i].insert(0, node._data)
+                            pass
+                        break
+                    else:
+                        pass
+                # if peer has the record it returns it to the node's cache
+                # otherwise it continues routing the request.
+                try: # see if the peer node has the file
+                    cidx = (G.nodes[peer]["pinned"] + G.nodes[peer]["cached"]).index(value)
+                    print("Value found!!!")
+                    return (G.nodes[peer]["pinned"] + G.nodes[peer]["cached"])[cidx]
+                except ValueError:
+                    # recursion
+                    find_value(G, G.nodes(peer), value, _k, _alpha)
+            else: # peer is inactive
+                # node updates its dht
+                G.nodes[node._data]["dht"][i].remove(peer)
+    # lookup the node dht
+    # G.nodes[node._data]["dht"]
+    G.nodes[node._data]["dht"]
+# https://stackoverflow.com/a/72419563
+
+# bootstrapping
+# preferential attachment to long lived nodes 
 if __name__ == "__main__":
     # for i in range(100):
     #     chunkKbits(
@@ -206,6 +268,14 @@ if __name__ == "__main__":
         # print(G.nodes()[node])
         # print(int(G.nodes()[node]["nodeId"]) ^ int(G.nodes()[node+1]["nodeId"]))
     unpin(G.nodes[0], p_unpin_content)
+
+    find_value(
+        G, 
+        G.nodes(1), 
+        "0001100001011111110110000011110000001010101111110100100011000111001110100110000100000000101111001011101111100011101001100001011001010001110100101100101100000111101001010000111110101001101011010000011111111011111011010110010101110100101100111011111101011101",
+        k,
+        alpha
+    )
     
     for node in G.nodes:
         # if active, potentially go offline
@@ -234,3 +304,5 @@ if __name__ == "__main__":
 ### Scrap
 # how to get binary representation of nodeId
 # bin(int(G.nodes()[node]["nodeId"]))
+
+# DHT hashing and routing https://stackoverflow.com/a/59671257
