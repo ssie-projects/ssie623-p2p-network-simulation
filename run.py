@@ -6,18 +6,40 @@ import random
 from enum import Enum
 import numpy as np
 
-# parameters
-alpha = 3
+# global variables
+global G, G_info
 
+# parameters
+random.seed(315) # setting seed for testing
+
+alpha = 3
+k = 20 # max size of each k-bucket
+p_active_inactive = 0.15 # Baseline probability of a node going inactive
+p_inactive_active = 0.02
+p_unpin_content = 0.05
+p_pin_cached_content = 0.25
+
+# node states
 class State(Enum):
     INACTIVE = 0
     ACTIVE = 1
-# tree = MerkleTree()
-# N = 100
-# data = [] # store the set of random content
 
-# rand bit string function
+# Number of server nodes in the network
+N = 100
 
+# Directed graph for message routing
+# Edge from node n -> m means that m is a peer and n will ping m for messages.
+G = nx.erdos_renyi_graph(
+    n=N,
+    p=0.06,
+    directed=True
+)
+
+# Empty directed graph to track information routing
+G_info = nx.DiGraph()
+
+## Functions.
+# rand bit string chunking function
 def chunkKbits(binary_string, b):
     """
     Accepts a binary string (eg '101000101') and returns a list of b sized chunks of that string.
@@ -56,89 +78,67 @@ def xor(id1, id2):
     dist = hamming2(id1b, id2b)
     return dist
 
-# Number of server nodes in the network
-N = 100
+def initialize():
+    global G
+    content_lst = [f'{random.getrandbits(256):=0256b}' for c in range(10)]
 
-# Baseline probability of a node going inactive
-p_active_inactive = 0.15
-p_inactive_active = 0.02
-p_unpin_content = 0.05
-p_pin_cached_content = 0.25
+    for node in G.nodes():
+        # create nodeId 256 bit string (will be used as PeerId)
+        G.nodes()[node]["nodeId"] = f'{random.getrandbits(256):=0256b}'
+        G.nodes()[node]["state"] = State.ACTIVE # nodes can randomly become inactive (go offline), in which case this becomes False
+        G.nodes()[node]["activeSteps"] = 0 # iterate this each simulation step
+        G.nodes()[node]["pinned"] = random.sample(content_lst, random.randint(0, 10))
+        G.nodes()[node]["cached"] = []
+        
+        # probability of going offline should be inversely proportional to number of consecutive active steps
+    del node # clear node variable just in case
 
-# Directed graph
-# Edge from node n -> m means that m is a peer and n will ping m for messages.
-G = nx.erdos_renyi_graph(
-    n=N,
-    p=0.06,
-    directed=True
-)
-
-# set of globally available content
-# eventually will refactor this.
-random.seed(315) # setting seed for testing
-content_lst = [f'{random.getrandbits(256):=0256b}' for c in range(10)]
-
-for node in G.nodes():
-    # create nodeId 256 bit string (will be used as PeerId)
-    G.nodes()[node]["nodeId"] = f'{random.getrandbits(256):=0256b}'
-    G.nodes()[node]["state"] = State.ACTIVE # nodes can randomly become inactive (go offline), in which case this becomes False
-    G.nodes()[node]["activeSteps"] = 0 # iterate this each simulation step
-    G.nodes()[node]["pinned"] = random.sample(content_lst, random.randint(0, 10))
-    G.nodes()[node]["cached"] = []
-    
-    # probability of going offline should be inversely proportional to number of consecutive active steps
-del node # clear node variable just in case
-
-# ensure all nodeIds are unique. if not, replace duplicates and check again.
-# counts the number of unique nodeIds and compares them to the number of nodes
-# these values should match. otherwise there is a duplicate to fix
-nodeId_lst = [G.nodes[node]["nodeId"] for node in G.nodes]
-
-while len(nodeId_lst) != N:
-    dupes = defaultdict(list)
-    for i,item in enumerate(nodeId_lst):
-        dupes[item].append(i)
-    dupes = {k:v for k,v in dupes.items() if len(v)>1}
-
-    # cycle through duplicates and replace them with new random generated bit strings
-    for item in list(dupes.items()):
-        for n in range(len(item[1])-1): # this is the list of node indexes that have the duplicate nodeIds
-            G.nodes[item[1][n]]["nodeId"] = f'{random.getrandbits(256):=0256b}'
-    # update the list of NodeIds currently in the network
+    # ensure all nodeIds are unique. if not, replace duplicates and check again.
+    # counts the number of unique nodeIds and compares them to the number of nodes
+    # these values should match. otherwise there is a duplicate to fix
     nodeId_lst = [G.nodes[node]["nodeId"] for node in G.nodes]
-    print("round of deduping complete")
-    print("current # of unique ids: /t", len(nodeId_lst), " and current # nodes: \t", N)
 
-print("\u2713 ", N, " nodes with ", len(set([G.nodes[node]["nodeId"] for node in G.nodes])), " unique NodeIds")
+    while len(nodeId_lst) != N:
+        dupes = defaultdict(list)
+        for i,item in enumerate(nodeId_lst):
+            dupes[item].append(i)
+        dupes = {k:v for k,v in dupes.items() if len(v)>1}
 
-#################
-# routing table 
-#################
-# k buckets aka peerset
-# initial peerset is this list of neighbors from the randomly generated small-world network graph
+        # cycle through duplicates and replace them with new random generated bit strings
+        for item in list(dupes.items()):
+            for n in range(len(item[1])-1): # this is the list of node indexes that have the duplicate nodeIds
+                G.nodes[item[1][n]]["nodeId"] = f'{random.getrandbits(256):=0256b}'
+        # update the list of NodeIds currently in the network
+        nodeId_lst = [G.nodes[node]["nodeId"] for node in G.nodes]
+        print("round of deduping complete")
+        print("current # of unique ids: /t", len(nodeId_lst), " and current # nodes: \t", N)
 
-## all the nodes (by nodeId) that a request is sent to
-k = 20
+    print("\u2713 ", N, " nodes with ", len(set([G.nodes[node]["nodeId"] for node in G.nodes])), " unique NodeIds")
 
-for node in G.nodes:
-    # initialize an empty k-bucket dht from peerset (neighbors)
-    G.nodes[node]["dht"] = dict()
-    for i in range(256):
-        G.nodes[node]["dht"][i] = list()
+    #################
+    # routing table 
+    #################
+    # k buckets aka peerset
+    # initial peerset is this list of neighbors from the randomly generated small-world network graph
 
-    # assign neighbors to k-bucket in the dht depending on distance between `NodeId` bitstrings (per Kademlia algorithm)
-    # this list will eventually be sorted, with least recently seen nodes in the beginning
-    # and most recently seen nodes at the end
-    for neighbor in G.neighbors(node):
-        # xor distance (simplified as hamming distance for bitstrings for this research)
-        dist = hamming2(G.nodes[node]["nodeId"], G.nodes[neighbor]["nodeId"])
+    for node in G.nodes:
+        # initialize an empty k-bucket dht from peerset (neighbors)
+        G.nodes[node]["dht"] = dict()
         for i in range(256):
-            if pow(2,i) <= dist < pow(2,i+1):
-                G.nodes[node]["dht"][i].append(neighbor)
-                break
-            else:
-                pass
-# xor distance
+            G.nodes[node]["dht"][i] = list()
+
+        # assign neighbors to k-bucket in the dht depending on distance between `NodeId` bitstrings (per Kademlia algorithm)
+        # this list will eventually be sorted, with least recently seen nodes in the beginning
+        # and most recently seen nodes at the end
+        for neighbor in G.neighbors(node):
+            # xor distance (simplified as hamming distance for bitstrings for this research)
+            dist = hamming2(G.nodes[node]["nodeId"], G.nodes[neighbor]["nodeId"])
+            for i in range(256):
+                if pow(2,i) <= dist < pow(2,i+1):
+                    G.nodes[node]["dht"][i].append(neighbor)
+                    break
+                else:
+                    pass
 
 def node_lookup(G, requestor_node, alpha):
     """
@@ -191,7 +191,7 @@ def store():
 def find_node():
     pass
 
-def find_value(G, node, value, _k=20, _alpha=3):
+def find_value(G, node, value, _k=20, _alpha=3, count=0):
     """
     Traverses the network according to the Kademlia algorithm.
 
@@ -201,6 +201,9 @@ def find_value(G, node, value, _k=20, _alpha=3):
     _k: number of peers to seek (default=20)
     _alpha: number of requests sent to peers at once (default=3)
     """
+    if count == 15:
+        print("too many hops couldn't find the file")
+        return False
     kbucket_peers = [bucket for bucket in G.nodes[node._data]["dht"].values() if len(bucket) > 0]
     for kbucket in kbucket_peers:
         for peer in kbucket:
@@ -213,21 +216,25 @@ def find_value(G, node, value, _k=20, _alpha=3):
                         try:
                             # node is currently in the peer's k-bucket
                             nIdx = G.nodes[peer]["dht"][i].index(node._data)
-                            # remove this node, the requestor, to the front of it's k-bucket list
+                            # move this node, the requestor, to the front of it's k-bucket list
                             G.nodes[peer]["dht"][i].insert(0, G.nodes[peer]["dht"][i].pop(nIdx))
                         except ValueError:
                             # # node is not currently in the peer's' k-bucket
                             # # if there are fewer than k entries, insert into the beginning
                             if len(G.nodes[peer]["dht"][i]) < _k:
                                 G.nodes[peer]["dht"][i].insert(0, node._data)
+                                # Create a graph edge
+                                G.add_edges_from([(peer, node._data)])
                             else: # full k-bucket
                                 # ping the least recently seen node, if active, move that node to the front
                                 if ping(G.nodes[G.nodes[peer]["dht"][i][-1]]) == State.ACTIVE:
                                     # if least recently seen is active it's moved to most recently seen (index 0) and the requestor node info is dropped
                                     G.nodes[peer]["dht"][i].insert(0, G.nodes[peer]["dht"][i].pop(len(G.nodes[peer]["dht"][i])-1))
                                 else:
-                                    # remove that node
+                                    # remove that node from the dht
                                     del G.nodes[peer]["dht"][i][-1]
+                                    # remove the edges of that node from the graph
+                                    G.remove_edges_from([(peer, G.nodes[peer]["dht"][i][-1])])
                                     # insert the requestor node
                                     G.nodes[peer]["dht"][i].insert(0, node._data)
                             pass
@@ -238,44 +245,38 @@ def find_value(G, node, value, _k=20, _alpha=3):
                 # otherwise it continues routing the request.
                 try: # see if the peer node has the file
                     cidx = (G.nodes[peer]["pinned"] + G.nodes[peer]["cached"]).index(value)
-                    print("Value found!!!")
-                    return (G.nodes[peer]["pinned"] + G.nodes[peer]["cached"])[cidx]
+                    # print("Value ", value, " found on node", peer)
+                    return peer, (G.nodes[peer]["pinned"] + G.nodes[peer]["cached"])[cidx]
                 except ValueError:
+                    # print("value not found with node ", peer, ".. will keep searching")
                     # recursion
-                    find_value(G, G.nodes(peer), value, _k, _alpha)
+                    return find_value(G, G.nodes(peer), value, _k, _alpha, count+1)
             else: # peer is inactive
                 # node updates its dht
                 G.nodes[node._data]["dht"][i].remove(peer)
-    # lookup the node dht
-    # G.nodes[node._data]["dht"]
-    G.nodes[node._data]["dht"]
+                # remove edges from the graph
+                G.remove_edges_from([(node._data, peer)])
+    
+    # kbuckets exhausted, value not found
+    return False
 # https://stackoverflow.com/a/72419563
 
 # bootstrapping
 # preferential attachment to long lived nodes 
-if __name__ == "__main__":
-    # for i in range(100):
-    #     chunkKbits(
-    #         binary_string=f'{random.getrandbits(256):=0256b}',
-    #         b=16
-    #     )
-    # xor_data = []
-    # xor_dist = xor(G.nodes[0]["nodeId"], G.nodes[1]["nodeId"])
-    # xor_data.append(xor_dist)
-    # print(xor_data)
-    # simulation time steps should be 1 hour to coincide with parameter k in kademlia paper
-    # for node in range(len(G.nodes())-1):
-        # print(G.nodes()[node])
-        # print(int(G.nodes()[node]["nodeId"]) ^ int(G.nodes()[node+1]["nodeId"]))
-    unpin(G.nodes[0], p_unpin_content)
+def update():
+    pass
 
-    find_value(
+if __name__ == "__main__":
+    initialize()
+    # unpin(G.nodes[0], p_unpin_content)
+
+    print(find_value(
         G, 
         G.nodes(1), 
-        "0001100001011111110110000011110000001010101111110100100011000111001110100110000100000000101111001011101111100011101001100001011001010001110100101100101100000111101001010000111110101001101011010000011111111011111011010110010101110100101100111011111101011101",
+        '1001010100101011100010000100101010011101111011111010000000110110000001000010000110100111000111101100011110001110010110011001001011011111011010000100111111011110001111001110000111001011001011111111100000001110111011010100000010001000101110110111001011101100',
         k,
         alpha
-    )
+    ))
     
     for node in G.nodes:
         # if active, potentially go offline
