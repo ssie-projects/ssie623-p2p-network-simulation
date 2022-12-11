@@ -10,12 +10,12 @@ import numpy as np
 global G, G_info
 
 # parameters
-random.seed(315) # setting seed for testing
+# random.seed(315) # setting seed for testing
 
 alpha = 3
 k = 20 # max size of each k-bucket
-p_active_inactive = 0.15 # Baseline probability of a node going inactive
-p_inactive_active = 0.02
+p_active_inactive = 0.05 # Baseline probability of a node going inactive
+p_inactive_active = 0.55
 p_unpin_content = 0.05
 p_pin_cached_content = 0.25
 
@@ -201,9 +201,9 @@ def find_value(G, node, value, _k=20, _alpha=3, count=0):
     _k: number of peers to seek (default=20)
     _alpha: number of requests sent to peers at once (default=3)
     """
-    if count == 15:
+    if count == 25:
         print("too many hops couldn't find the file")
-        return False
+        return False, False, count
     kbucket_peers = [bucket for bucket in G.nodes[node._data]["kbuckets"].values() if len(bucket) > 0]
     for kbucket in kbucket_peers:
         for peer in kbucket:
@@ -246,7 +246,7 @@ def find_value(G, node, value, _k=20, _alpha=3, count=0):
                 try: # see if the peer node has the file
                     cidx = (G.nodes[peer]["pinned"] + G.nodes[peer]["cached"]).index(value)
                     # print("Value ", value, " found on node", peer)
-                    return peer, (G.nodes[peer]["pinned"] + G.nodes[peer]["cached"])[cidx]
+                    return peer, (G.nodes[peer]["pinned"] + G.nodes[peer]["cached"])[cidx], count
                 except ValueError:
                     # print("value not found with node ", peer, ".. will keep searching")
                     # recursion
@@ -264,20 +264,22 @@ def find_value(G, node, value, _k=20, _alpha=3, count=0):
 # bootstrapping
 # preferential attachment to long lived nodes 
 def update():
-    global G
+    global G, G_info
     # Nodes go inactive and active (simulating going offline and back online)
     for node in G.nodes:
         # if active, potentially go offline
         if G.nodes[node]['state'] == State.ACTIVE:
             if random.random() < p_active_inactive:
-                G.nodes[node]['state'] == State.INACTIVE
+                G.nodes[node]['state'] = State.INACTIVE
         # if inactive, potentially come back online
         elif G.nodes[node]['state'] == State.INACTIVE:
             if random.random() < p_inactive_active:
-                G.nodes[node]['state'] == State.ACTIVE
+                G.nodes[node]['state'] = State.ACTIVE
 
-    # Some nodes churn and leave the network entirely
-
+        # Some nodes churn and leave the network entirely
+def observe():
+    global G, G_info
+    print("Num active nodes: \t", len([1 for n in G.nodes if G.nodes[n]["state"] == State.ACTIVE]))
     # Nodes choose to pin some of their cached data (make permanent)
 
     # Active nodes broadcast their pinned and cached content to their peers
@@ -289,15 +291,22 @@ def update():
 if __name__ == "__main__":
     initialize()
     # unpin(G.nodes[0], p_unpin_content)
-    print(len(G.edges))
-    print(find_value(
-        G, 
-        G.nodes(1), 
-        '1001010100101011100010000100101010011101111011111010000000110110000001000010000110100111000111101100011110001110010110011001001011011111011010000100111111011110001111001110000111001011001011111111100000001110111011010100000010001000101110110111001011101100',
-        k,
-        alpha
-    ))
-    print(len(G.edges))
+    for i in range(1000):
+        observe()
+        update()
+
+    # peer, value, hops = find_value(
+    #     G, 
+    #     G.nodes(1), 
+    #     '1100001000110111011101000000110001110100000011110010101100101011001010000001011001101100110000011001101011101111101011001010000010011010001111101111101000111100001001110111110110101100001110010101110100110010101101111101110111010100110101110000111110111001',
+    #     k,
+    #     alpha
+    # )
+    # if peer:
+    #     G_info.add_edges_from([(1, peer)])
+    # print(G_info)
+    # print(peer, value, hops)
+    # print(len(G.edges))
     
 ### Scrap
 # how to get binary representation of nodeId
