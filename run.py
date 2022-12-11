@@ -264,20 +264,8 @@ def find_value(G, node, value, _k=20, _alpha=3, count=0):
 # bootstrapping
 # preferential attachment to long lived nodes 
 def update():
-    pass
-
-if __name__ == "__main__":
-    initialize()
-    # unpin(G.nodes[0], p_unpin_content)
-
-    print(find_value(
-        G, 
-        G.nodes(1), 
-        '1001010100101011100010000100101010011101111011111010000000110110000001000010000110100111000111101100011110001110010110011001001011011111011010000100111111011110001111001110000111001011001011111111100000001110111011010100000010001000101110110111001011101100',
-        k,
-        alpha
-    ))
-    
+    global G
+    # Nodes go inactive and active (simulating going offline and back online)
     for node in G.nodes:
         # if active, potentially go offline
         if G.nodes[node]['state'] == State.ACTIVE:
@@ -287,21 +275,30 @@ if __name__ == "__main__":
         elif G.nodes[node]['state'] == State.INACTIVE:
             if random.random() < p_inactive_active:
                 G.nodes[node]['state'] == State.ACTIVE
-        
-        # nodes broadcast all of the content CIDs they currently have available to their peers
+
+    # Some nodes churn and leave the network entirely
+
+    # Nodes choose to pin some of their cached data (make permanent)
+
+    # Active nodes broadcast their pinned and cached content to their peers
 
         # nodes have pinned and cached data
         ## cached data is the file they requested
         ## cached data is deleted (garbage collected) after some number of steps
 
-
-
-
-    # for i in range(10):
-    #     # generate 256 bit integer for Node IDs as in the IPFS protocol
-    #     data = str(random.getrandbits(256))
-
-
+if __name__ == "__main__":
+    initialize()
+    # unpin(G.nodes[0], p_unpin_content)
+    print(len(G.edges))
+    print(find_value(
+        G, 
+        G.nodes(1), 
+        '1001010100101011100010000100101010011101111011111010000000110110000001000010000110100111000111101100011110001110010110011001001011011111011010000100111111011110001111001110000111001011001011111111100000001110111011010100000010001000101110110111001011101100',
+        k,
+        alpha
+    ))
+    print(len(G.edges))
+    
 ### Scrap
 # how to get binary representation of nodeId
 # bin(int(G.nodes()[node]["nodeId"]))
