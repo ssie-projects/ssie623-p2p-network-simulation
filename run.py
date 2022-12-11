@@ -123,9 +123,9 @@ def initialize():
 
     for node in G.nodes:
         # initialize an empty k-bucket dht from peerset (neighbors)
-        G.nodes[node]["dht"] = dict()
+        G.nodes[node]["kbuckets"] = dict()
         for i in range(256):
-            G.nodes[node]["dht"][i] = list()
+            G.nodes[node]["kbuckets"][i] = list()
 
         # assign neighbors to k-bucket in the dht depending on distance between `NodeId` bitstrings (per Kademlia algorithm)
         # this list will eventually be sorted, with least recently seen nodes in the beginning
@@ -135,7 +135,7 @@ def initialize():
             dist = hamming2(G.nodes[node]["nodeId"], G.nodes[neighbor]["nodeId"])
             for i in range(256):
                 if pow(2,i) <= dist < pow(2,i+1):
-                    G.nodes[node]["dht"][i].append(neighbor)
+                    G.nodes[node]["kbuckets"][i].append(neighbor)
                     break
                 else:
                     pass
@@ -204,7 +204,7 @@ def find_value(G, node, value, _k=20, _alpha=3, count=0):
     if count == 15:
         print("too many hops couldn't find the file")
         return False
-    kbucket_peers = [bucket for bucket in G.nodes[node._data]["dht"].values() if len(bucket) > 0]
+    kbucket_peers = [bucket for bucket in G.nodes[node._data]["kbuckets"].values() if len(bucket) > 0]
     for kbucket in kbucket_peers:
         for peer in kbucket:
             if ping(G.nodes[peer]) == State.ACTIVE:
@@ -215,28 +215,28 @@ def find_value(G, node, value, _k=20, _alpha=3, count=0):
                         # if the node is already in the peer's k-bucket the node is moved to the first index
                         try:
                             # node is currently in the peer's k-bucket
-                            nIdx = G.nodes[peer]["dht"][i].index(node._data)
+                            nIdx = G.nodes[peer]["kbuckets"][i].index(node._data)
                             # move this node, the requestor, to the front of it's k-bucket list
-                            G.nodes[peer]["dht"][i].insert(0, G.nodes[peer]["dht"][i].pop(nIdx))
+                            G.nodes[peer]["kbuckets"][i].insert(0, G.nodes[peer]["kbuckets"][i].pop(nIdx))
                         except ValueError:
                             # # node is not currently in the peer's' k-bucket
                             # # if there are fewer than k entries, insert into the beginning
-                            if len(G.nodes[peer]["dht"][i]) < _k:
-                                G.nodes[peer]["dht"][i].insert(0, node._data)
+                            if len(G.nodes[peer]["kbuckets"][i]) < _k:
+                                G.nodes[peer]["kbuckets"][i].insert(0, node._data)
                                 # Create a graph edge
                                 G.add_edges_from([(peer, node._data)])
                             else: # full k-bucket
                                 # ping the least recently seen node, if active, move that node to the front
-                                if ping(G.nodes[G.nodes[peer]["dht"][i][-1]]) == State.ACTIVE:
+                                if ping(G.nodes[G.nodes[peer]["kbuckets"][i][-1]]) == State.ACTIVE:
                                     # if least recently seen is active it's moved to most recently seen (index 0) and the requestor node info is dropped
-                                    G.nodes[peer]["dht"][i].insert(0, G.nodes[peer]["dht"][i].pop(len(G.nodes[peer]["dht"][i])-1))
+                                    G.nodes[peer]["kbuckets"][i].insert(0, G.nodes[peer]["kbuckets"][i].pop(len(G.nodes[peer]["kbuckets"][i])-1))
                                 else:
                                     # remove that node from the dht
-                                    del G.nodes[peer]["dht"][i][-1]
+                                    del G.nodes[peer]["kbuckets"][i][-1]
                                     # remove the edges of that node from the graph
-                                    G.remove_edges_from([(peer, G.nodes[peer]["dht"][i][-1])])
+                                    G.remove_edges_from([(peer, G.nodes[peer]["kbuckets"][i][-1])])
                                     # insert the requestor node
-                                    G.nodes[peer]["dht"][i].insert(0, node._data)
+                                    G.nodes[peer]["kbuckets"][i].insert(0, node._data)
                             pass
                         break
                     else:
@@ -253,7 +253,7 @@ def find_value(G, node, value, _k=20, _alpha=3, count=0):
                     return find_value(G, G.nodes(peer), value, _k, _alpha, count+1)
             else: # peer is inactive
                 # node updates its dht
-                G.nodes[node._data]["dht"][i].remove(peer)
+                G.nodes[node._data]["kbuckets"][i].remove(peer)
                 # remove edges from the graph
                 G.remove_edges_from([(node._data, peer)])
     
