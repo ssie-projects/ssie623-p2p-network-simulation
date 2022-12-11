@@ -6,12 +6,14 @@ import random
 from enum import Enum
 import numpy as np
 
+# set random seed
+random.seed(315) # setting seed for testing
+
 # global variables
 global G, G_info
+content_lst = [f'{random.getrandbits(256):=0256b}' for c in range(10)]
 
 # parameters
-# random.seed(315) # setting seed for testing
-
 alpha = 3
 k = 20 # max size of each k-bucket
 p_active_inactive = 0.05 # Baseline probability of a node going inactive
@@ -79,8 +81,7 @@ def xor(id1, id2):
     return dist
 
 def initialize():
-    global G
-    content_lst = [f'{random.getrandbits(256):=0256b}' for c in range(10)]
+    global G, content_lst
 
     for node in G.nodes():
         # create nodeId 256 bit string (will be used as PeerId)
@@ -89,6 +90,7 @@ def initialize():
         G.nodes()[node]["activeSteps"] = 0 # iterate this each simulation step
         G.nodes()[node]["pinned"] = random.sample(content_lst, random.randint(0, 10))
         G.nodes()[node]["cached"] = []
+        G.nodes()[node]["dht"] = [] # lists (NodeID, contentID) for all known key pairs
         
         # probability of going offline should be inversely proportional to number of consecutive active steps
     del node # clear node variable just in case
@@ -115,6 +117,17 @@ def initialize():
 
     print("\u2713 ", N, " nodes with ", len(set([G.nodes[node]["nodeId"] for node in G.nodes])), " unique NodeIds")
 
+    #################
+    # distributd hash table
+    #################
+    # each node publishes their availability content to its peers' DHT
+    for node in G.nodes:
+        # pinned and cached content
+        available_content_lst = [(node, content) for content in G.nodes[node]["pinned"] + G.nodes[node]["cached"]]
+        for peer in G.neighbors(node):
+            # this is a simplification, in IPFS this hosting info is routed until the closest NodeId is discovered, and it's stored with that node.
+            G.nodes[peer]["dht"].extend(available_content_lst)
+    
     #################
     # routing table 
     #################
@@ -201,6 +214,15 @@ def find_value(G, node, value, _k=20, _alpha=3, count=0):
     _k: number of peers to seek (default=20)
     _alpha: number of requests sent to peers at once (default=3)
     """
+    # check DHT first for the value
+    try:
+        # find first matching element in node DHT
+        matching_idx = [content[1] for content in G.nodes[node._data]["dht"]].index(v)
+        matching_node_id = G.nodes[node._data]["dht"][matching_idx][0]
+        return find_value(G, G.nodes(matching_node_id), value, _k, _alpha, count+1)
+    except:
+        pass
+
     if count == 25:
         print("too many hops couldn't find the file")
         return False, False, count
@@ -250,10 +272,14 @@ def find_value(G, node, value, _k=20, _alpha=3, count=0):
                 except ValueError:
                     # print("value not found with node ", peer, ".. will keep searching")
                     # recursion
-                    return find_value(G, G.nodes(peer), value, _k, _alpha, count+1)
+                    find_value(G, G.nodes(peer), value, _k, _alpha, count+1)
             else: # peer is inactive
-                # node updates its dht
-                G.nodes[node._data]["kbuckets"][i].remove(peer)
+                # node updates its kbuckets
+                # identify which k bucket index the now inactive peer is in
+                kidx = [v.count(peer) for v in G.nodes[node._data]["kbuckets"].values()].index(1)
+                # remove that inactive node from the node's k bucket
+                G.nodes[node._data]["kbuckets"][kidx].remove(peer)
+
                 # remove edges from the graph
                 G.remove_edges_from([(node._data, peer)])
     
@@ -291,22 +317,24 @@ def observe():
 if __name__ == "__main__":
     initialize()
     # unpin(G.nodes[0], p_unpin_content)
-    for i in range(1000):
+    for i in range(10):
         observe()
         update()
 
-    # peer, value, hops = find_value(
-    #     G, 
-    #     G.nodes(1), 
-    #     '1100001000110111011101000000110001110100000011110010101100101011001010000001011001101100110000011001101011101111101011001010000010011010001111101111101000111100001001110111110110101100001110010101110100110010101101111101110111010100110101110000111110111001',
-    #     k,
-    #     alpha
-    # )
-    # if peer:
-    #     G_info.add_edges_from([(1, peer)])
-    # print(G_info)
-    # print(peer, value, hops)
-    # print(len(G.edges))
+        request = random.choice(content_lst)
+        peer, value, hops = find_value(
+            G, 
+            G.nodes(random.randint(0, N)), 
+            request,
+            k,
+            alpha,
+            count=0
+        )
+    if peer:
+        G_info.add_edges_from([(1, peer)])
+    print(G_info)
+    print(peer, value, hops)
+    print(len(G.edges))
     
 ### Scrap
 # how to get binary representation of nodeId
