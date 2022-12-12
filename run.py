@@ -302,9 +302,14 @@ def initialize():
                 # # otherwise the peer relays the message to its peers until the node with least distance between its nodeId and the content is found.
                 # else:
                 #     min_peer_peers_content_dist_id = list(G.neighbors(peer))[peer_peers_content_dist_lst.index(min_peer_peers_content_dist)]
+                print("Finding nearest node to content: \t", content)
+
                 nearest_node = find_nearest_node(G, peer, content, 0)
-                print(nearest_node)
-                G.nodes[nearest_node]["dht"].extend((node, content))
+                
+                print("Nearest node identified: \t", nearest_node)
+                print("Nearest node nodeId: \t", G.nodes[nearest_node]["nodeId"])
+                
+                G.nodes[nearest_node]["dht"].extend(content)
     
     #################
     # routing table 
@@ -373,19 +378,38 @@ def observe():
 if __name__ == "__main__":
     initialize()
     # unpin(G.nodes[0], p_unpin_content)
-    for i in range(10):
-        observe()
-        update()
+    # for i in range(10):
+    #     # observe()
+    #     # update()
 
-        request = random.choice(content_lst)
-        peer, value, hops = find_value(
-            G, 
-            G.nodes(random.randint(0, N)), 
-            request,
-            k,
-            alpha,
-            count=0
-        )
+    #     # request = random.choice(content_lst)
+    #     request = "0010101001111000011110010001101100101110111100110001110011100011110011000010111101011000111111111111010000100101111000111111111001011001100100000000101100010111010011000101010010000110010000100111001111100111000011010111011100001000000010011001110110010111"
+    #     # requestor = G.nodes(random.randint(0, N))
+    #     requestor = G.nodes(2)
+    #     print("Node ", requestor, " requesting content ", request, "from the network")
+    #     peer, value, hops = find_value(
+    #         G, 
+    #         requestor, 
+    #         request,
+    #         k,
+    #         alpha,
+    #         count=0
+    #     )
+    request = "0010101001111000011110010001101100101110111100110001110011100011110011000010111101011000111111111111010000100101111000111111111001011001100100000000101100010111010011000101010010000110010000100111001111100111000011010111011100001000000010011001110110010111"
+    
+    # confirm this request is available on the network
+    print(request in [content for node in G.nodes for content in G.nodes[node]["pinned"] + G.nodes[node]["cached"]])
+    # requestor = G.nodes(random.randint(0, N))
+    requestor = G.nodes(2)
+    print("Node ", requestor, " requesting content ", request, "from the network")
+    peer, value, hops = find_value(
+        G, 
+        requestor, 
+        request,
+        k,
+        alpha,
+        count=0
+    )
     if peer:
         G_info.add_edges_from([(1, peer)])
     print(G_info)
