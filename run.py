@@ -80,79 +80,6 @@ def xor(id1, id2):
     dist = hamming2(id1b, id2b)
     return dist
 
-def initialize():
-    global G, content_lst
-
-    for node in G.nodes():
-        # create nodeId 256 bit string (will be used as PeerId)
-        G.nodes()[node]["nodeId"] = f'{random.getrandbits(256):=0256b}'
-        G.nodes()[node]["state"] = State.ACTIVE # nodes can randomly become inactive (go offline), in which case this becomes False
-        G.nodes()[node]["activeSteps"] = 0 # iterate this each simulation step
-        G.nodes()[node]["pinned"] = random.sample(content_lst, random.randint(0, 10))
-        G.nodes()[node]["cached"] = []
-        G.nodes()[node]["dht"] = [] # lists (NodeID, contentID) for all known key pairs
-        
-        # probability of going offline should be inversely proportional to number of consecutive active steps
-    del node # clear node variable just in case
-
-    # ensure all nodeIds are unique. if not, replace duplicates and check again.
-    # counts the number of unique nodeIds and compares them to the number of nodes
-    # these values should match. otherwise there is a duplicate to fix
-    nodeId_lst = [G.nodes[node]["nodeId"] for node in G.nodes]
-
-    while len(nodeId_lst) != N:
-        dupes = defaultdict(list)
-        for i,item in enumerate(nodeId_lst):
-            dupes[item].append(i)
-        dupes = {k:v for k,v in dupes.items() if len(v)>1}
-
-        # cycle through duplicates and replace them with new random generated bit strings
-        for item in list(dupes.items()):
-            for n in range(len(item[1])-1): # this is the list of node indexes that have the duplicate nodeIds
-                G.nodes[item[1][n]]["nodeId"] = f'{random.getrandbits(256):=0256b}'
-        # update the list of NodeIds currently in the network
-        nodeId_lst = [G.nodes[node]["nodeId"] for node in G.nodes]
-        print("round of deduping complete")
-        print("current # of unique ids: /t", len(nodeId_lst), " and current # nodes: \t", N)
-
-    print("\u2713 ", N, " nodes with ", len(set([G.nodes[node]["nodeId"] for node in G.nodes])), " unique NodeIds")
-
-    #################
-    # distributd hash table
-    #################
-    # each node publishes their availability content to its peers' DHT
-    for node in G.nodes:
-        # pinned and cached content
-        available_content_lst = [(node, content) for content in G.nodes[node]["pinned"] + G.nodes[node]["cached"]]
-        for peer in G.neighbors(node):
-            # this is a simplification, in IPFS this hosting info is routed until the closest NodeId is discovered, and it's stored with that node.
-            G.nodes[peer]["dht"].extend(available_content_lst)
-    
-    #################
-    # routing table 
-    #################
-    # k buckets aka peerset
-    # initial peerset is this list of neighbors from the randomly generated small-world network graph
-
-    for node in G.nodes:
-        # initialize an empty k-bucket dht from peerset (neighbors)
-        G.nodes[node]["kbuckets"] = dict()
-        for i in range(256):
-            G.nodes[node]["kbuckets"][i] = list()
-
-        # assign neighbors to k-bucket in the dht depending on distance between `NodeId` bitstrings (per Kademlia algorithm)
-        # this list will eventually be sorted, with least recently seen nodes in the beginning
-        # and most recently seen nodes at the end
-        for neighbor in G.neighbors(node):
-            # xor distance (simplified as hamming distance for bitstrings for this research)
-            dist = hamming2(G.nodes[node]["nodeId"], G.nodes[neighbor]["nodeId"])
-            for i in range(256):
-                if pow(2,i) <= dist < pow(2,i+1):
-                    G.nodes[node]["kbuckets"][i].append(neighbor)
-                    break
-                else:
-                    pass
-
 def node_lookup(G, requestor_node, alpha):
     """
     Implements the Kademlia node lookup algorithm .
@@ -201,8 +128,32 @@ def ping(node):
 def store():
     pass
 
-def find_node():
-    pass
+def find_nearest_node(G, _node, _content, count=0):
+    """
+    A recursive function that traverses a graphs neighbors until the node
+    with smallest nodeId <> content distance is found.
+    """
+    # if the algorithm has made 10 hops
+    if count == 10:
+        return _node
+    
+    # if the node has no neighbors
+    if len(list(G.neighbors(_node))) < 1:
+        return _node
+
+    content_dist = hamming2(G.nodes[_node]["nodeId"], _content[1])
+
+    peer_content_dist_lst = [hamming2(G.nodes[peer]["nodeId"], _content[1]) for peer in G.neighbors(_node)]
+    min_peer_content_dist = min(peer_content_dist_lst)
+
+    # if the current node is closest to the content, return current node.
+    if content_dist < min_peer_content_dist:
+        print("nearest node found: ", _node)
+        return _node
+    else:
+        # send this message to nearest peer node.
+        next_peer_node = list(G.neighbors(_node))[peer_content_dist_lst.index(min_peer_content_dist)]
+        return find_nearest_node(G, next_peer_node, _content, count+1)
 
 def find_value(G, node, value, _k=20, _alpha=3, count=0):
     """
@@ -287,6 +238,99 @@ def find_value(G, node, value, _k=20, _alpha=3, count=0):
     return False
 # https://stackoverflow.com/a/72419563
 
+def initialize():
+    global G, content_lst
+
+    for node in G.nodes():
+        # create nodeId 256 bit string (will be used as PeerId)
+        G.nodes()[node]["nodeId"] = f'{random.getrandbits(256):=0256b}'
+        G.nodes()[node]["state"] = State.ACTIVE # nodes can randomly become inactive (go offline), in which case this becomes False
+        G.nodes()[node]["activeSteps"] = 0 # iterate this each simulation step
+        G.nodes()[node]["pinned"] = random.sample(content_lst, random.randint(0, 10))
+        G.nodes()[node]["cached"] = []
+        G.nodes()[node]["dht"] = [] # lists (NodeID, contentID) for all known key pairs
+        
+        # probability of going offline should be inversely proportional to number of consecutive active steps
+    del node # clear node variable just in case
+
+    # ensure all nodeIds are unique. if not, replace duplicates and check again.
+    # counts the number of unique nodeIds and compares them to the number of nodes
+    # these values should match. otherwise there is a duplicate to fix
+    nodeId_lst = [G.nodes[node]["nodeId"] for node in G.nodes]
+
+    while len(nodeId_lst) != N:
+        dupes = defaultdict(list)
+        for i,item in enumerate(nodeId_lst):
+            dupes[item].append(i)
+        dupes = {k:v for k,v in dupes.items() if len(v)>1}
+
+        # cycle through duplicates and replace them with new random generated bit strings
+        for item in list(dupes.items()):
+            for n in range(len(item[1])-1): # this is the list of node indexes that have the duplicate nodeIds
+                G.nodes[item[1][n]]["nodeId"] = f'{random.getrandbits(256):=0256b}'
+        # update the list of NodeIds currently in the network
+        nodeId_lst = [G.nodes[node]["nodeId"] for node in G.nodes]
+        print("round of deduping complete")
+        print("current # of unique ids: /t", len(nodeId_lst), " and current # nodes: \t", N)
+
+    print("\u2713 ", N, " nodes with ", len(set([G.nodes[node]["nodeId"] for node in G.nodes])), " unique NodeIds")
+
+    #################
+    # distributd hash table
+    #################
+    # each node publishes their availability content to its peers' DHT
+    for node in G.nodes:
+        # pinned and cached content
+        available_content_lst = [(node, content) for content in G.nodes[node]["pinned"] + G.nodes[node]["cached"]]
+        for peer in G.neighbors(node):
+            # this is a simplification, in IPFS this hosting info is routed until the closest NodeId is discovered, and it's stored with that node.
+            
+            # G.nodes[peer]["dht"].extend(available_content_lst)
+
+            for content in available_content_lst:
+                # route (key, value) message to closest available peer in the network
+                # if one of the peer's peers has a closer nodeId send this message to them
+                # otherwise update the peer dht
+                # peer_content_dist = hamming2(G.nodes[peer]["nodeId"], content[1])
+                # peer_peers_content_dist_lst = [hamming2(G.nodes[peer]["nodeId"], content[1]) for peer in G.neighbors(node)]
+                # min_peer_peers_content_dist = min(peer_peers_content_dist_lst)
+
+                # # if this peer has a nodeId with least distance to the content bitstring then update the peer's dht
+                # if peer_content_dist < min_peer_peers_content_dist:
+                #     G.nodes[peer]["dht"].extend(available_content_lst)
+                #     break
+                # # otherwise the peer relays the message to its peers until the node with least distance between its nodeId and the content is found.
+                # else:
+                #     min_peer_peers_content_dist_id = list(G.neighbors(peer))[peer_peers_content_dist_lst.index(min_peer_peers_content_dist)]
+                nearest_node = find_nearest_node(G, peer, content, 0)
+                print(nearest_node)
+                G.nodes[nearest_node]["dht"].extend((node, content))
+    
+    #################
+    # routing table 
+    #################
+    # k buckets aka peerset
+    # initial peerset is this list of neighbors from the randomly generated small-world network graph
+
+    for node in G.nodes:
+        # initialize an empty k-bucket dht from peerset (neighbors)
+        G.nodes[node]["kbuckets"] = dict()
+        for i in range(256):
+            G.nodes[node]["kbuckets"][i] = list()
+
+        # assign neighbors to k-bucket in the dht depending on distance between `NodeId` bitstrings (per Kademlia algorithm)
+        # this list will eventually be sorted, with least recently seen nodes in the beginning
+        # and most recently seen nodes at the end
+        for neighbor in G.neighbors(node):
+            # xor distance (simplified as hamming distance for bitstrings for this research)
+            dist = hamming2(G.nodes[node]["nodeId"], G.nodes[neighbor]["nodeId"])
+            for i in range(256):
+                if pow(2,i) <= dist < pow(2,i+1):
+                    G.nodes[node]["kbuckets"][i].append(neighbor)
+                    break
+                else:
+                    pass
+
 # bootstrapping
 # preferential attachment to long lived nodes 
 def update():
@@ -299,7 +343,7 @@ def update():
         # If closest peer has a closer peer it routes the request to update the DHT to that node.
         # Else
         # Update DHT and k-buckets
-        
+
     # Node changes for each step.
     # Nodes go inactive and active (simulating going offline and back online)
     for node in G.nodes:
