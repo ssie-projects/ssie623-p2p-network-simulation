@@ -223,7 +223,7 @@ def find_value(G, node, value, _k=20, _alpha=3, count=0):
     except:
         pass
 
-    if count == 25:
+    if count == 100:
         print("too many hops couldn't find the file")
         return False, False, count
     kbucket_peers = [bucket for bucket in G.nodes[node._data]["kbuckets"].values() if len(bucket) > 0]
@@ -291,6 +291,16 @@ def find_value(G, node, value, _k=20, _alpha=3, count=0):
 # preferential attachment to long lived nodes 
 def update():
     global G, G_info
+    # Each node broadcasts to their peers which Content Ids it is hosting.
+    # Those broadcasts are routed through the network until the NodeId with the least distance to the ContentId
+    # is found, then the message is added to that node's DHT.
+
+    # Send message to closest peer.
+        # If closest peer has a closer peer it routes the request to update the DHT to that node.
+        # Else
+        # Update DHT and k-buckets
+        
+    # Node changes for each step.
     # Nodes go inactive and active (simulating going offline and back online)
     for node in G.nodes:
         # if active, potentially go offline
@@ -303,6 +313,8 @@ def update():
                 G.nodes[node]['state'] = State.ACTIVE
 
         # Some nodes churn and leave the network entirely
+        # to be implemented later
+
 def observe():
     global G, G_info
     print("Num active nodes: \t", len([1 for n in G.nodes if G.nodes[n]["state"] == State.ACTIVE]))
