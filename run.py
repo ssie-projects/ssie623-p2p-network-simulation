@@ -33,7 +33,7 @@ N = 100
 # Edge from node n -> m means that m is a peer and n will ping m for messages.
 G = nx.erdos_renyi_graph(
     n=N,
-    p=0.06,
+    p=0.25,
     directed=True
 )
 
@@ -395,26 +395,28 @@ if __name__ == "__main__":
     #         alpha,
     #         count=0
     #     )
-    request = "0010101001111000011110010001101100101110111100110001110011100011110011000010111101011000111111111111010000100101111000111111111001011001100100000000101100010111010011000101010010000110010000100111001111100111000011010111011100001000000010011001110110010111"
-    
-    # confirm this request is available on the network
-    print(request in [content for node in G.nodes for content in G.nodes[node]["pinned"] + G.nodes[node]["cached"]])
-    # requestor = G.nodes(random.randint(0, N))
-    requestor = G.nodes(2)
-    print("Node ", requestor, " requesting content ", request, "from the network")
-    peer, value, hops = find_value(
-        G, 
-        requestor, 
-        request,
-        k,
-        alpha,
-        count=0
-    )
-    if peer:
-        G_info.add_edges_from([(1, peer)])
-    print(G_info)
-    print(peer, value, hops)
-    print(len(G.edges))
+    # request = "0001101000111101111011100010000000110010001001011100000001011110010101100000110010110000110000000111111110101011001110100000000101000101001111000100101110101010111010100000000000101011110001000100001011111011010010101001111111011000110110011011111010110111"
+    # request randomly from the network
+    for i in range(5):
+        request = random.sample([content for node in G.nodes for content in G.nodes[node]["pinned"] + G.nodes[node]["cached"]],1)[0]
+        # confirm this request is available on the network
+        print(request in [content for node in G.nodes for content in G.nodes[node]["pinned"] + G.nodes[node]["cached"]])
+        # requestor = G.nodes(random.randint(0, N))
+        requestor = G.nodes(2)
+        print("Node ", requestor, " requesting content ", request, "from the network")
+        peer, value, hops = find_value(
+            G, 
+            requestor, 
+            request,
+            k,
+            alpha,
+            count=0
+        )
+        if peer:
+            G_info.add_edges_from([(1, peer)])
+        print(G_info)
+        print(peer, value, hops)
+        print(len(G.edges))
     
 ### Scrap
 # how to get binary representation of nodeId
