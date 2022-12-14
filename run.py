@@ -30,7 +30,7 @@ class State(Enum):
     ACTIVE = 1
 
 # Number of server nodes in the network
-N = 100
+N = 1000
 p = 0.09
 # Directed graph for message routing
 # Edge from node n -> m means that m is a peer and n will ping m for messages.

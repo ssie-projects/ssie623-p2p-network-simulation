@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import networkx as nx
 import numpy as np
+import scipy as sp
 # from pymotif import Motif
 import random 
 
@@ -14,8 +15,8 @@ random.seed(315)
 # G = nx.read_gpickle("./data/networks/N25_p_0_0_9.pickle")
 # G_dht = nx.read_gpickle("./data/networks/N25_p_0_0_9_dht.pickle")
 
-G = nx.read_gpickle("./data/networks/N100_p_0.09CONTENT_100.pickle")
-G_dht = nx.read_gpickle("./data/networks/N100_p_0.09CONTENT_100_dht.pickle")
+G = nx.read_gpickle("./data/networks/N1000_p_0.09CONTENT_100.pickle")
+G_dht = nx.read_gpickle("./data/networks/N1000_p_0.09CONTENT_100_dht.pickle")
 
 # label edges
 for edge in G.edges:
@@ -40,8 +41,11 @@ def plot_louvain_communities(_G, plot_title, write=True, filename="TEST", latex_
     #                         node_color=[cmap.colors[color]],
     #                         node_shape=shapes[color])
     plt.title("Connections between Louvain communities of DHT network")
-    pos = nx.spring_layout(_G)
-    nx.draw(_G, pos=pos, node_size=[100*_G.nodes[node]["size"] for node in _G], alpha=0.70)
+    pos = nx.circular_layout(_G)
+    num_nodes = len(G.nodes)
+    m = sp.interpolate.interp1d([0, max([_G.nodes[node]["size"] for node in _G.nodes])], [0,100])
+    
+    nx.draw(_G, pos=pos, node_size=[float(m(_G.nodes[node]["size"])) for node in _G], alpha=0.70)
     plt.savefig("./images/G_dht_N100_p_0_09_louvain.png")
     plt.show()
 
@@ -140,7 +144,7 @@ if __name__ == "__main__":
     # plot_degree_rank_and_histogram(
     #     G, 
     #     plot_title="Degree distribution of peer network", 
-    #     filename="G_N100_p_0_09",
+    #     filename="G_N1000_p_0_09",
     #     write=False
     # )
     
@@ -169,7 +173,7 @@ if __name__ == "__main__":
     plot_histogram(
         dht_lengths,
         "Number of CIDs tracked on Distributed Hash Table by each node",
-        filename="G_dht_N100_p_0_09_CONTENT_100",
+        filename="G_dht_N1000_p_0_09_CONTENT_100",
         write=True
     )
 
@@ -203,7 +207,7 @@ if __name__ == "__main__":
     print("Avg. closeness centrality of Louvain community: \t", np.mean(list(nx.closeness_centrality(G_dht_lc, distance="distance").values())))
     plot_louvain_communities(G_dht_lc, "Louvain communities")
 
-    print("Motif analysis: G", G)
+    # print("Motif analysis: G", G)
     # G_motifs = nmc.mcounter(G, nmc.motifs)
     # print(G_motifs)
 
@@ -234,7 +238,7 @@ if __name__ == "__main__":
     # motif.plot()
     # plot_degree_rank_and_histogram(G_dht, "Degree distribution of DHT network")
     # Louvain communities
-    print(nx.algorithms.community.louvain_communities(G))
+    # print(nx.algorithms.community.louvain_communities(G))
     # pos = nx.circular_layout(G)
     # nx.draw(G, pos=pos)
     
