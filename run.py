@@ -6,12 +6,15 @@ import random
 from enum import Enum
 import numpy as np
 
+import matplotlib.pyplot as plt
+
 # set random seed
 random.seed(315) # setting seed for testing
 
 # global variables
-global G, G_info
-content_lst = [f'{random.getrandbits(256):=0256b}' for c in range(10)]
+global G, G_dht
+content_count = 100
+content_lst = [f'{random.getrandbits(256):=0256b}' for c in range(content_count)]
 
 # parameters
 alpha = 3
@@ -28,17 +31,18 @@ class State(Enum):
 
 # Number of server nodes in the network
 N = 100
-
+p = 0.09
 # Directed graph for message routing
 # Edge from node n -> m means that m is a peer and n will ping m for messages.
 G = nx.erdos_renyi_graph(
     n=N,
-    p=0.25,
+    p=p,
     directed=True
 )
 
 # Empty directed graph to track information routing
 G_info = nx.DiGraph()
+G_dht = nx.DiGraph()
 
 ## Functions.
 # rand bit string chunking function
@@ -239,7 +243,10 @@ def find_value(G, node, value, _k=20, _alpha=3, count=0):
 # https://stackoverflow.com/a/72419563
 
 def initialize():
-    global G, content_lst
+    """
+    graph_setting: if "read" then 
+    """
+    global G, G_dht, content_lst
 
     for node in G.nodes():
         # create nodeId 256 bit string (will be used as PeerId)
@@ -309,7 +316,17 @@ def initialize():
                 print("Nearest node identified: \t", nearest_node)
                 print("Nearest node nodeId: \t", G.nodes[nearest_node]["nodeId"])
                 
-                G.nodes[nearest_node]["dht"].extend(content)
+                # Constructing DHT network
+                G_dht.add_nodes_from([(node, G.nodes[node])])
+                G_dht.add_nodes_from([(nearest_node, G.nodes[nearest_node])])
+                
+                G_dht.add_edge(nearest_node, node, type="DHT")
+                
+                if tuple(content) not in G.nodes[nearest_node]["dht"]:
+                    G.nodes[nearest_node]["dht"].append(tuple(content))
+                else:
+                    pass
+
     
     #################
     # routing table 
@@ -332,6 +349,7 @@ def initialize():
             for i in range(256):
                 if pow(2,i) <= dist < pow(2,i+1):
                     G.nodes[node]["kbuckets"][i].append(neighbor)
+                    nx.set_edge_attributes(G, {(node, neighbor): {"distance": i}})
                     break
                 else:
                     pass
@@ -377,6 +395,31 @@ def observe():
 
 if __name__ == "__main__":
     initialize()
+    print(G)
+
+    # write to file
+    # change states
+    # G
+    for node in G.nodes:
+        G.nodes[node]["state"] = G.nodes[node]["state"]._name_
+    # G DHT
+    for node in G_dht.nodes:
+        G_dht.nodes[node]["state"] = G_dht.nodes[node]["state"]._name_
+
+    print("writing G to file.")
+    data_dir = "./data/networks/"
+    G_filename = data_dir + "N" + str(N) + "_p_" + str(p) + "CONTENT_" + str(content_count)
+    nx.write_gpickle(G, G_filename + ".pickle")
+
+    print("writing G_dht to file.")
+    G_dht_filename = data_dir + "N" + str(N) + "_p_" + str(p) + "CONTENT_" + str(content_count) + "_dht"
+    nx.write_gpickle(G_dht, G_dht_filename + ".pickle")
+
+    # Generate G and DHT graphs for 10, 100, 1000 nodes for
+    # p = 0.05, p = .25, p =.75
+    # 
+    # Compare connectivity between the two
+    #  
     # unpin(G.nodes[0], p_unpin_content)
     # for i in range(10):
     #     # observe()
@@ -397,26 +440,28 @@ if __name__ == "__main__":
     #     )
     # request = "0001101000111101111011100010000000110010001001011100000001011110010101100000110010110000110000000111111110101011001110100000000101000101001111000100101110101010111010100000000000101011110001000100001011111011010010101001111111011000110110011011111010110111"
     # request randomly from the network
-    for i in range(5):
-        request = random.sample([content for node in G.nodes for content in G.nodes[node]["pinned"] + G.nodes[node]["cached"]],1)[0]
-        # confirm this request is available on the network
-        print(request in [content for node in G.nodes for content in G.nodes[node]["pinned"] + G.nodes[node]["cached"]])
-        # requestor = G.nodes(random.randint(0, N))
-        requestor = G.nodes(2)
-        print("Node ", requestor, " requesting content ", request, "from the network")
-        peer, value, hops = find_value(
-            G, 
-            requestor, 
-            request,
-            k,
-            alpha,
-            count=0
-        )
-        if peer:
-            G_info.add_edges_from([(1, peer)])
-        print(G_info)
-        print(peer, value, hops)
-        print(len(G.edges))
+    # for i in range(5):
+    #     request = random.sample([content for node in G.nodes for content in G.nodes[node]["pinned"] + G.nodes[node]["cached"]],1)[0]
+    #     # confirm this request is available on the network
+    #     print(request in [content for node in G.nodes for content in G.nodes[node]["pinned"] + G.nodes[node]["cached"]])
+    #     # requestor = G.nodes(random.randint(0, N))
+    #     requestor = G.nodes(random.sample(range(N),1)[0])
+    #     print("Node ", requestor, " requesting content ", request, "from the network")
+    # nx.plot(G)
+    
+    # peer, value, hops = find_value(
+    #     G, 
+    #     requestor, 
+    #     request,
+    #     k,
+    #     alpha,
+    #     count=0
+    # )
+    # if peer:
+    #     G_info.add_edges_from([(1, peer)])
+    # print(G_info)
+    # print(peer, value, hops)
+    # print(len(G.edges))
     
 ### Scrap
 # how to get binary representation of nodeId
